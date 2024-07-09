@@ -524,10 +524,10 @@ class UI {
 				gl.useProgram(prog_rk4);
                 gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addSlits'), 1);
                 this.ctx.opts['addSlits']['active'] = true;
-				gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_w'), 0.25);
-				this.ctx.opts['addSlits']['addSlits_w'] = 0.25;
-				gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_s'), 0.25);
-				this.ctx.opts['addSlits']['addSlits_s'] = 0.25;
+				gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_w'), 0.2);
+				this.ctx.opts['addSlits']['addSlits_w'] = 0.2;
+				gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_s'), 0.05);
+				this.ctx.opts['addSlits']['addSlits_s'] = 0.05;
                 gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addTrap'), 0);
                 this.ctx.opts['addTrap'] = false;
                 gl.uniform1f(gl.getUniformLocation(prog_rk4, 'gamma'), 0.01);
