@@ -1,0 +1,64 @@
+html, body {
+  width:  100%;
+  height: 100%;
+  margin: 0;
+  background-color: #F0F0F0;
+  color: #111;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+a:link {
+  color: #222;
+}
+
+a:visited {
+  color: #222;
+}
+
+a:hover {
+  color: #444;
+}
+
+a:active {
+  color: #222;
+} 
+
+h1, h2, h3{
+  margin: 0.2em 0;
+}
+
+@media only screen and (max-width: 600px) {
+  h1 {
+    font-size: 150%;
+  }
+  h2 {
+    font-size: 120%;
+  }
+  h3 {
+    font-size: 110%;
+  }
+}
+
+
+.GUI-container{
+  position: relative;
+  width: 100%;
+  height: 15px;
+}
+
+#GUI {
+  position: absolute;
+  top: 0px;
+  right: 0px;
+}
+
+.upper-container {
+  text-align: center;
+}
+
+.lower-container {
+  padding-left: 5%;
+  padding-right: 5%;
+}
+
