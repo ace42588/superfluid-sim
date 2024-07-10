@@ -10,8 +10,8 @@
     "windows": [
       {
         "title": "superfluid-sim",
-        "width": 800,
-        "height": 600
+        "width": 1040,
+        "height": 1040
       }
     ],
     "security": {

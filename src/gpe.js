@@ -1,17 +1,13 @@
-/* exported GPE, UI */
-/* global dat */
+import shaderVsVert from './shader-vs.js';
+import shaderFsShowFrag from './shader-fs-show.js';
+import shaderFsDpsiFrag from './shader-fs-dpsi.js';
+import shaderFsStepFrag from './shader-fs-step.js';
 
-class GPE {
-    getShader(id){
-        var gl = this.gl;
-        var shaderScript = document.getElementById(id);
-        var str = shaderScript.firstChild.textContent;
-        var shader;
-        if (shaderScript.type == 'x-shader/x-fragment')
-            shader = gl.createShader ( gl.FRAGMENT_SHADER );
-        else if (shaderScript.type == 'x-shader/x-vertex')
-            shader = gl.createShader(gl.VERTEX_SHADER);
-        else return null;
+import UI from './ui.js';
+
+export default class GPE {
+	static getShader(gl, str, type){
+        let shader = gl.createShader(gl[type]);
         gl.shaderSource(shader, str);
         gl.compileShader(shader);
         if (gl.getShaderParameter(shader, gl.COMPILE_STATUS) == 0)
@@ -19,56 +15,57 @@ class GPE {
         return shader;
     }
     
-    makeTexture(gl_tex){
-        var gl = this.gl;
-        var t = gl.createTexture();
+    static makeTexture(gl, gl_tex, width, height, pix){
+        //console.debug('makeTexture', {gl, gl_tex, width, height, pix});
+		const t = gl.createTexture();
         gl.activeTexture(gl_tex);
         gl.bindTexture(gl.TEXTURE_2D, t);
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.N, this.N, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.pix);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pix);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        this.setReflective(gl_tex);
+		GPE.setBoundaryType({gl, textures: [gl_tex], type: 'MIRRORED_REPEAT'});
         return t;
     }
 
-    makeFBO(texture){
-        var gl = this.gl;
-        var fbo = gl.createFramebuffer();
+	static makeFBO(gl, gl_tex, width, height, pix){
+        const fbo = gl.createFramebuffer();
+		const texture = this.makeTexture(gl, gl_tex, width, height, pix);
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
         return fbo;
     }
-
-    setReflective(gl_tex){
-        var gl = this.gl;
-        gl.activeTexture(gl_tex);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
-    }
-
-    setPeriodic(gl_tex){
-        var gl = this.gl;
-        gl.activeTexture(gl_tex);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-    }
+	
+	static setBoundaryType({gl, textures, type}) {
+		//setReflective: gl.MIRRORED_REPEAT, setPeriodic: gl.REPEAT
+		if (type !== 'MIRRORED_REPEAT' && type !== 'REPEAT') {
+			console.error("setBoundaryType", "Invalid boundary type:", type);
+			return;
+		}
+		if (!Array.isArray(textures)) textures = [textures];
+		textures.forEach((gl_tex) => {
+			console.debug("setBoundaryType", {gl_tex});
+			gl.activeTexture(gl_tex);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl[type]);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl[type]);
+		});
+	}
 
     initShaders(){
-        var gl = this.gl;
-        var prog_rk4 = this.prog_rk4 = gl.createProgram();
+        const gl = this.gl;
+		var prog_rk4 = this.prog_rk4 = gl.createProgram();
         var prog_step = this.prog_step = gl.createProgram();
         var prog_show = this.prog_show = gl.createProgram();
 
         // Compile, attach and link shaders
-        gl.attachShader(prog_rk4, this.getShader('shader-vs'));
-        gl.attachShader(prog_rk4, this.getShader('shader-fs-dpsi'));
+        gl.attachShader(prog_rk4, GPE.getShader(gl, shaderVsVert, 'VERTEX_SHADER'));
+        gl.attachShader(prog_rk4, GPE.getShader(gl, shaderFsDpsiFrag, 'FRAGMENT_SHADER'));
         gl.linkProgram(prog_rk4);
-        gl.attachShader(prog_step, this.getShader('shader-vs'));
-        gl.attachShader(prog_step, this.getShader('shader-fs-step'));
+        gl.attachShader(prog_step, GPE.getShader(gl, shaderVsVert, 'VERTEX_SHADER'));
+        gl.attachShader(prog_step, GPE.getShader(gl, shaderFsStepFrag, 'FRAGMENT_SHADER'));
         gl.linkProgram(prog_step);
-        gl.attachShader(prog_show, this.getShader('shader-vs'));
-        gl.attachShader(prog_show, this.getShader('shader-fs-show'));
+        gl.attachShader(prog_show, GPE.getShader(gl, shaderVsVert, 'VERTEX_SHADER'));
+        gl.attachShader(prog_show, GPE.getShader(gl, shaderFsShowFrag, 'FRAGMENT_SHADER'));
         gl.linkProgram(prog_show);
 
         // Initialise the RK4 substep shader parameters
@@ -131,9 +128,9 @@ class GPE {
     }
 
     stepAndDraw(){
-        var gl = this.gl;
+        const gl = this.gl;
         // Take multiple small timesteps per draw as a balance between simulation speed and numerical stability
-        for(var i=0; i<10;i++){
+        for(let i=0; i<10;i++){
             // First RK4 pass
             gl.useProgram(this.prog_rk4);
             gl.uniform1i(this.prog_rk4_psi, 1);
@@ -203,35 +200,55 @@ class GPE {
     }
 
     changeBoundary(value){
-        var gl = this.gl;
-        if(value == 'Periodic'){
-            this.setPeriodic(gl.TEXTURE0);
-            this.setPeriodic(gl.TEXTURE1);
-            this.setPeriodic(gl.TEXTURE2);
-            this.setPeriodic(gl.TEXTURE3);
-            this.setPeriodic(gl.TEXTURE4);
-            this.setPeriodic(gl.TEXTURE5);
-        } else { 
-            this.setReflective(gl.TEXTURE0);
-            this.setReflective(gl.TEXTURE1);
-            this.setReflective(gl.TEXTURE2);
-            this.setReflective(gl.TEXTURE3);
-            this.setReflective(gl.TEXTURE4);
-            this.setReflective(gl.TEXTURE5);
-        }
+		GPE.setBoundaryType({
+			gl: this.gl,
+			textures: this.textures,
+			type: value == 'Periodic' ? 'REPEAT' : 'MIRRORED_REPEAT', 
+		});
     }
+	
+	spawnVortex(ctx) {
+		//console.log(ctx);
+		const gl = this.gl;
+		const scale = this.scale;
+		const prog_step = this.prog_step;
+		const { positive, position: { x, y } } = ctx;
+		gl.useProgram(prog_step);
+		gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), positive ? 1 : -1);
+		gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), x/scale);
+		gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), (scale-y)/scale);
+	}
+	
+	addObstacle(ctx) {
+		const gl = this.gl;
+		const scale = this.scale;
+		const prog_rk4 = this.prog_rk4;
+		const { position: { x, y } } = ctx;
+		gl.useProgram(prog_rk4);
+		gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addPot'), 1);
+		gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addPot_x'), x/scale);
+		gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addPot_y'), (scale-y)/scale);
+	}
+	
+	removeObstacle = () => {
+		this.gl.useProgram(this.prog_rk4);
+		this.gl.uniform1i(this.gl.getUniformLocation(this.prog_rk4, 'addPot'), 0);
+	}
 
-    constructor() {
-        var gl;
-        this.canvas = document.getElementById('GPE');
-        this.gl = gl = this.canvas.getContext('webgl');
-
-        // Scale up the canvas display to fit the window
-        this.scale = ((window.innerHeight < window.innerWidth)?window.innerHeight/1.1:window.innerWidth)/1.1;
-        this.canvas.style.height = this.scale + 'px';
+    resize = () => {
+		this.scale = ((window.innerHeight < window.innerWidth)?window.innerHeight/1.1:window.innerWidth)/1.1;;
+		this.canvas.style.height = this.scale + 'px';
+		//this.ui = new UI(this);
+	}
+	
+	constructor(canvas) {
+		this.canvas = canvas;
+		this.scale = 800;
+		canvas.style.height = this.scale + 'px';
+		const gl = this.gl = canvas.getContext('webgl');
 
         // Set initial simulation parameters
-        this.N = 256;
+        const n = 256;
         this.opts = {
             'addPot': {
                 'active': false,
@@ -247,15 +264,16 @@ class GPE {
             'addTrap': false,
             'addVortex': {
                 'active': false,
+				'positive': true,
                 'x': 0,
                 'y': 0,
 				'angular_momentum': 0,
             },
-			'vortexCannon': {
+			'vortexPair': {
                 'active': false,
                 'x': 0.15,
                 'y': 0.15,
-				'freq': 300,
+				'delay': 300,
             },
             'boundary': 'Reflective',
             'preset': 'Box',
@@ -270,354 +288,21 @@ class GPE {
         this.initShaders();
 
         // Setup webgl texture storage
-        this.pix = new Uint8Array(4*this.N*this.N);
-        this.FBO_PSI1 = this.makeFBO(this.makeTexture(gl.TEXTURE0));
-        this.FBO_PSI2 = this.makeFBO(this.makeTexture(gl.TEXTURE1));
-        this.FBO_K1   = this.makeFBO(this.makeTexture(gl.TEXTURE2));
-        this.FBO_K2   = this.makeFBO(this.makeTexture(gl.TEXTURE3));
-        this.FBO_K3   = this.makeFBO(this.makeTexture(gl.TEXTURE4));
-        this.FBO_K4   = this.makeFBO(this.makeTexture(gl.TEXTURE5));
+		let tex;
+		this.textures = tex = [ gl.TEXTURE0, gl.TEXTURE1, gl.TEXTURE2, gl.TEXTURE3, gl.TEXTURE4, gl.TEXTURE5];
+        const pix = new Uint8Array(4*n*n);
+        this.FBO_PSI1 = GPE.makeFBO(gl, tex[0], n, n, pix);
+		this.FBO_PSI2 = GPE.makeFBO(gl, tex[1], n, n, pix);
+		this.FBO_K1   = GPE.makeFBO(gl, tex[2], n, n, pix);
+		this.FBO_K2   = GPE.makeFBO(gl, tex[3], n, n, pix);
+		this.FBO_K3   = GPE.makeFBO(gl, tex[4], n, n, pix);
+		this.FBO_K4   = GPE.makeFBO(gl, tex[5], n, n, pix);
 
         if( gl.checkFramebufferStatus(gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE)
             console.log('FRAMEBUFFER not complete');
 
-        this.ui = new UI(this);
+        this.spawnVortex = this.spawnVortex.bind(this);
+		this.resize = this.resize.bind(this);
+		this.ui = new UI(this);
     }
 }
-
-class UI {
-    setupControls(canvas){
-        var gl = this.ctx.gl;
-        var prog_step = this.ctx.prog_step;
-        var prog_rk4 = this.ctx.prog_rk4;
-        var scale = this.ctx.scale;
-
-
-        // Handle touch events
-        // Take note of touch start time
-        canvas.addEventListener('touchstart', function (e) {
-            this.isDragging = false;
-            this.lastTouch = e.touches[0];
-            this.ttc = Date.now();
-            if (e.target == canvas) {
-                e.preventDefault();
-            }
-        }, false);
-
-        // If tap and dragging, insert a potential obstacle
-        canvas.addEventListener('touchmove', function (e) {
-            if(Date.now()-this.ttc > 100) this.isDragging = true;
-            this.lastTouch = e.touches[0];
-            var rect = canvas.getBoundingClientRect();
-            var x =  this.lastTouch.clientX - rect.left;
-            var y =  this.lastTouch.clientY - rect.top;
-            if(this.isDragging){
-                gl.useProgram(prog_rk4);
-                gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addPot'), 1);
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addPot_x'), x/scale);
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addPot_y'), (scale-y)/scale);
-            }
-            if (e.target == canvas) {
-                e.preventDefault();
-            }
-        }, false);
-
-        // Ensure obstacle is remove. If just tapping, insert a vortex. 
-        canvas.addEventListener('touchend', function (e) {
-            var rect = canvas.getBoundingClientRect();
-            var x =  this.lastTouch.clientX - rect.left;
-            var y =  this.lastTouch.clientY - rect.top;
-            gl.useProgram(prog_rk4);
-            gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addPot'), 0);
-            if (!this.isDragging) {
-                gl.useProgram(prog_step);
-                gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), 1);
-                gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), x/scale);
-                gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), (scale-y)/scale);
-            }
-            this.isDragging = false;
-            if (e.target == canvas) {
-                e.preventDefault();
-            }
-        }, false);
-
-        // Take note of mouse click time and type
-        document.body.addEventListener('mousedown', function(e) {
-            this.isDragging = false;
-            this.ttc = Date.now();
-            if(e.target == canvas){
-                switch(e.button){
-                case 0:
-                    this.isDown = true;
-                    break;
-                case 2:
-                    this.isRightDown = true;
-                    break;
-                }
-            }
-        });
-
-        // Handle inserting potental object on click-and-drag
-        document.body.addEventListener('mousemove', function(e) {
-            var x = (e.offsetX != null) ? e.offsetX : e.originalEvent.layerX;
-            var y = (e.offsetY != null) ? e.offsetY : e.originalEvent.layerY;
-            if(Date.now()-this.ttc > 100) this.isDragging = true;
-            if(this.isDown && this.isDragging && e.target == canvas){
-                gl.useProgram(prog_rk4);
-                gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addPot'), 1);
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addPot_x'), x/scale);
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addPot_y'), (scale-y)/scale);
-            }
-        });
-
-        // Handle injecting positive vortex on left click and negative vortex on right click
-        document.body.addEventListener('mouseup', function(e) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addPot'), 0);
-            var x = (e.offsetX != null) ? e.offsetX : e.originalEvent.layerX;
-            var y = (e.offsetY != null) ? e.offsetY : e.originalEvent.layerY;
-            if (!this.isDragging && this.isDown && e.target == canvas) {
-                gl.useProgram(prog_step);
-                gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), 1);
-                gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), x/scale);
-                gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), (scale-y)/scale);
-            }
-            if (!this.isDragging && this.isRightDown && e.target == canvas) {
-                gl.useProgram(prog_step);
-                gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), -1);
-                gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), x/scale);
-                gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), (scale-y)/scale);
-            }
-            this.isRightDown = false;
-            this.isDown = false;
-            this.isDragging = false;
-        });
-
-		function fireNegative(offset_x, offset_y) {
-			gl.useProgram(prog_step);
-			gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), -1);
-			gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), 0.5 + offset_x);
-			gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), offset_y);
-		}
-		
-		function firePositive(offset_x, offset_y) {
-			gl.useProgram(prog_step);
-			gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), 1);
-			gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), 0.5 - offset_x);
-			gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), offset_y);
-		}
-		
-		// Handle injecting positive vortex on up arrow and negative on down arrow
-		document.addEventListener("keydown", (event) => {
-			event.preventDefault();
-			switch (event.key) {
-				case "ArrowDown":
-					gl.useProgram(prog_step);
-					gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), -1);
-					gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), 0.5);
-					gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), 0.1);
-					break;
-				case "ArrowUp":
-					gl.useProgram(prog_step);
-					gl.uniform1i(gl.getUniformLocation(prog_step, 'addVortex'), 1);
-					gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_x'), 0.5);
-					gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_y'), 0.1);
-					break;
-				case "ArrowLeft":
-					/*
-					var ang_mom = this.ctx.opts['addVortex']['angular_momentum'] - 1;
-					this.ctx.opts['addVortex']['angular_momentum'] = ang_mom;
-					console.log({ang_mom})
-					gl.useProgram(prog_step);
-					gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_ang_mom'), ang_mom);
-					*/
-					break;
-				case "ArrowRight":
-					/*
-					var ang_mom = this.ctx.opts['addVortex']['angular_momentum'] + 1;
-					this.ctx.opts['addVortex']['angular_momentum'] = ang_mom;
-					console.log({ang_mom})
-					gl.useProgram(prog_step);
-					gl.uniform1f(gl.getUniformLocation(prog_step, 'addVortex_ang_mom'), ang_mom);
-					*/
-					break;
-				case " ":
-					if (!this.pairFiring) {
-						this.pairFiring = true;
-						var offset_x = this.ctx.opts['vortexCannon']['x'];
-						var offset_y = this.ctx.opts['vortexCannon']['y'];
-						fireNegative(offset_x, offset_y);
-						// 10ms seems to the minimum time to reliably update the shader
-						setTimeout(() => {
-							firePositive(offset_x, offset_y);
-						}, 10);
-						setTimeout(() => {
-							this.pairFiring = false;
-						}, this.ctx.opts['vortexCannon']['freq']);
-					}
-					break;
-				default:
-					return;
-			}
-		});
-
-        // Disable default right click menu on canvas item        
-        canvas.addEventListener('contextmenu', function() {
-            event.preventDefault();
-            return false;
-        });
-        
-    }
-
-    constructor(ctx) {
-        this.ctx = ctx;
-        this.isDragging = false;
-        this.isDown = false;
-        this.isRightDown = false;
-		this.pairFiring = false;
-        var gl = this.ctx.gl;
-        var prog_show = this.ctx.prog_show;
-        var prog_step = this.ctx.prog_step;
-        var prog_rk4 = this.ctx.prog_rk4;
-
-        // Add dat GUI to the DOM. Start full width and closed if on a narrow screen
-        var gui = new dat.GUI({width: (window.innerWidth < 600)?window.innerWidth:320, autoPlace: false});
-        if(window.innerWidth < 600) gui.close();
-        document.getElementById('GUI').appendChild(gui.domElement);
-
-        // Setup the dat GUI parameter controllers
-        gui.add(this.ctx.opts, 'preset', ['Box', 'Trapped & Rotating', 'Random Vortices (Phase)', 'Double Slit']).name('Preset Parameters').onChange(function(value) {
-            if(value == 'Box'){
-                gl.useProgram(prog_rk4);
-                gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addTrap'), 0);
-                this.ctx.opts['addTrap'] = false;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'gamma'), 0.01);
-                this.ctx.opts['gamma'] = 0.01;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'ang_mom'), 5);
-                this.ctx.opts['omega'] = 0.0;
-                gl.useProgram(prog_show);
-                gl.uniform1i(gl.getUniformLocation(prog_show, 'showPhase'), false);
-                this.ctx.opts['showPhase'] = false;
-            } else if (value == 'Trapped & Rotating'){
-                gl.useProgram(prog_rk4);
-                gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addTrap'), 1);
-                this.ctx.opts['addTrap'] = true;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'gamma'), 0.15);
-                this.ctx.opts['gamma'] = 0.15;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'ang_mom'), 1.6 + 5);
-                this.ctx.opts['omega'] = 1.6;
-            } else if (value == 'Random Vortices (Phase)'){
-                gl.useProgram(prog_rk4);
-                gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addTrap'), 0);
-                this.ctx.opts['addTrap'] = false;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'gamma'), 0.01);
-                this.ctx.opts['gamma'] = 0.01;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'ang_mom'), 5);
-                this.ctx.opts['omega'] = 0.0;
-                gl.useProgram(prog_step);
-                gl.uniform1i(gl.getUniformLocation(prog_step, 'randVort'), Math.floor(Math.random() * 256));
-                gl.uniform1i(gl.getUniformLocation(prog_step, 'reset'), 1);
-                gl.useProgram(prog_show);
-                gl.uniform1i(gl.getUniformLocation(prog_show, 'showPhase'), true);
-                this.ctx.opts['showPhase'] = true;
-            } else if (value = 'Double Slit') {
-				gl.useProgram(prog_rk4);
-                gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addSlits'), 1);
-                this.ctx.opts['addSlits']['active'] = true;
-				gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_w'), 0.2);
-				this.ctx.opts['addSlits']['addSlits_w'] = 0.2;
-				gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_s'), 0.05);
-				this.ctx.opts['addSlits']['addSlits_s'] = 0.05;
-                gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addTrap'), 0);
-                this.ctx.opts['addTrap'] = false;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'gamma'), 0.01);
-                this.ctx.opts['gamma'] = 0.01;
-                gl.uniform1f(gl.getUniformLocation(prog_rk4, 'ang_mom'), 5);
-                this.ctx.opts['omega'] = 0.0;
-                gl.useProgram(prog_show);
-                gl.uniform1i(gl.getUniformLocation(prog_show, 'showPhase'), false);
-                this.ctx.opts['showPhase'] = false;
-			}
-            for (var i in gui.__controllers) {
-                gui.__controllers[i].updateDisplay();
-            }
-        }.bind(this));
-
-        gui.add(this.ctx.opts, 'boundary', ['Periodic', 'Reflective']).name('Boundary Condition').onChange(
-            this.ctx.changeBoundary.bind(this.ctx)
-        );
-
-        gui.add(this.ctx.opts, 'gamma', 0.0, 0.3).step(0.01).name('Dissipation').onChange(function(value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1f(gl.getUniformLocation(prog_rk4, 'gamma'), value);
-        });
-
-        gui.add(this.ctx.opts, 'dt', 0, 0.1).step(0.01).name('Time Step').onChange(function(value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1f(gl.getUniformLocation(prog_rk4, 'dt'), value);
-        });
-
-        gui.add(this.ctx.opts, 'omega', -2 , 2).step(0.05).name('Angular Momentum').onChange(function(value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1f(gl.getUniformLocation(prog_rk4, 'ang_mom'), value + 5);
-        });
-
-        gui.add(this.ctx.opts.addPot, 'r',0,30).step(0.1).name('Obstacle Radius').onChange(function(value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addPot_r'), value);
-        });
-
-        gui.add(this.ctx.opts, 'addTrap').name('Enable Trap').onChange(function (value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addTrap'), value);
-        });
-
-        gui.add(this.ctx.opts, 'showPhase').name('Show Phase').onChange(function (value) {
-            gl.useProgram(prog_show);
-            gl.uniform1i(gl.getUniformLocation(prog_show, 'showPhase'), value);
-        }); 
-		
-		gui.add(this.ctx.opts.addSlits, 'active').name('Enable Double Slit').onChange(function (value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1i(gl.getUniformLocation(prog_rk4, 'addSlits'), value);
-        });
-		
-		gui.add(this.ctx.opts.addSlits, 'w',0,.5).step(0.01).name('Slit Width').onChange(function (value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_w'), value/2);
-        });
-		
-		gui.add(this.ctx.opts.addSlits, 's',0,.5).step(0.01).name('Slit Spacing').onChange(function (value) {
-            gl.useProgram(prog_rk4);
-            gl.uniform1f(gl.getUniformLocation(prog_rk4, 'addSlits_s'), value/2);
-        });
-		
-		gui.add(this.ctx.opts.addVortex, 'angular_momentum',-10,10).step(0.1).name('Vortex AngMom');
-		
-		gui.add(this.ctx.opts.vortexCannon, 'x',0,0.5).step(0.01).name('Cannon Spacing');
-		
-		gui.add(this.ctx.opts.vortexCannon, 'y',0,1).step(0.05).name('Cannon Y');
-		
-		gui.add(this.ctx.opts.vortexCannon, 'freq',250,500).step(10).name('Cannon Delay');
-
-        gui.add({
-            quench:function(){ 
-                gl.useProgram(prog_step);
-                gl.uniform1i(gl.getUniformLocation(prog_step, 'quench'), 1);
-            }
-        }, 'quench').name('Quench Phase');
-
-        gui.add({
-            reset:function(){ 
-                gl.useProgram(prog_step);
-                gl.uniform1i(gl.getUniformLocation(prog_step, 'reset'), 1);
-            }
-        }, 'reset').name('Reset Simulation');
-
-
-        this.setupControls(this.ctx.canvas);
-    }
-}
-
-var gpe = new GPE();
-gpe.stepAndDraw();
