@@ -1,24 +1,31 @@
 export default `
 precision highp float;
 precision highp sampler2D;
+
 uniform sampler2D s_psi;
 uniform sampler2D s_k1;
 uniform sampler2D s_k2;
 uniform sampler2D s_k3;
 uniform sampler2D s_k4;
+
 uniform int addVortex;
 uniform int addVortex1;
 uniform int reset;
 uniform int quench;
 uniform int randVort;
+
 uniform float addVortex_x;
 uniform float addVortex_y;
 uniform float addVortex_x1;
 uniform float addVortex_y1;
 uniform float addVortex_ang_mom;
 uniform vec2 addVortex_init_velocity;
+uniform float time;
+
 varying vec2 vTexCoord;
+
 const float d = 1./256.;
+
 vec4 packCmpx( in vec2 value ) {
 	const vec2 bit_mask = vec2( 0.0, 0.00390625 );
 	const vec2 mult_vec = vec2( 65280.0, 255.0 );
@@ -29,16 +36,20 @@ vec4 packCmpx( in vec2 value ) {
 	res2 -= res2.xx * bit_mask;
 	return vec4(res1,res2);
 }
+
 vec2 unpackCmpx( in vec4 rgba ) {
 	vec2 bitSh = vec2( 0.00390625, 1.0 );
 	return vec2(dot(rgba.xy,bitSh),dot(rgba.zw, bitSh))*5. - 2.5;
 }
+
 vec2 cmpxmul(in vec2 a, in vec2 b) {
 	return vec2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
 }
+
 int mod(int x, int y){
 	return x-y*(x/y);
 }
+
 void main(void) {
 	// Unpack
 	vec2 psi = unpackCmpx(texture2D(s_psi, vTexCoord));
@@ -67,25 +78,6 @@ void main(void) {
 			psi_new = cmpxmul(psi_new,vec2(cos(-phase), -sin(-phase)));
 		}
 	}
-  /*
-  if (addVortex1 != 0){
-		vec2 relPos = vec2(vTexCoord.y-addVortex_y1,vTexCoord.x-addVortex_x1);
-		float angle = atan(relPos.y, relPos.x);
-		float phase;
-		if (addVortex_ang_mom != 0.){
-			phase = angle * addVortex_ang_mom;
-		} else {
-			phase = angle;
-		}
-		
-		if (addVortex1==1){
-			psi_new = cmpxmul(psi_new,vec2(cos(phase), -sin(phase)));
-		} else if (addVortex1==-1){
-			psi_new = cmpxmul(psi_new,vec2(cos(-phase), -sin(-phase)));
-		}
-    addVortex1 = 0;
-	}
-  */
 
 	// Reset system to unit wavefunction
 	if (reset==1){
