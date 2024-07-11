@@ -7,11 +7,14 @@ uniform sampler2D s_k2;
 uniform sampler2D s_k3;
 uniform sampler2D s_k4;
 uniform int addVortex;
+uniform int addVortex1;
 uniform int reset;
 uniform int quench;
 uniform int randVort;
 uniform float addVortex_x;
 uniform float addVortex_y;
+uniform float addVortex_x1;
+uniform float addVortex_y1;
 uniform float addVortex_ang_mom;
 uniform vec2 addVortex_init_velocity;
 varying vec2 vTexCoord;
@@ -50,7 +53,6 @@ void main(void) {
 	// Add vortices
 	if (addVortex != 0){
 		vec2 relPos = vec2(vTexCoord.y-addVortex_y,vTexCoord.x-addVortex_x);
-		//float angle = atan(relPos.y, relPos.x);
 		float angle = atan(relPos.y, relPos.x);
 		float phase;
 		if (addVortex_ang_mom != 0.){
@@ -61,11 +63,29 @@ void main(void) {
 		
 		if (addVortex==1){
 			psi_new = cmpxmul(psi_new,vec2(cos(phase), -sin(phase)));
-
 		} else if (addVortex==-1){
 			psi_new = cmpxmul(psi_new,vec2(cos(-phase), -sin(-phase)));
 		}
 	}
+  /*
+  if (addVortex1 != 0){
+		vec2 relPos = vec2(vTexCoord.y-addVortex_y1,vTexCoord.x-addVortex_x1);
+		float angle = atan(relPos.y, relPos.x);
+		float phase;
+		if (addVortex_ang_mom != 0.){
+			phase = angle * addVortex_ang_mom;
+		} else {
+			phase = angle;
+		}
+		
+		if (addVortex1==1){
+			psi_new = cmpxmul(psi_new,vec2(cos(phase), -sin(phase)));
+		} else if (addVortex1==-1){
+			psi_new = cmpxmul(psi_new,vec2(cos(-phase), -sin(-phase)));
+		}
+    addVortex1 = 0;
+	}
+  */
 
 	// Reset system to unit wavefunction
 	if (reset==1){
